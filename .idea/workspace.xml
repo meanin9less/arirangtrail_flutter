@@ -5,18 +5,7 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="a5fbd55e-8660-481d-883c-3a2ea78cef04" name="Changes" comment="웹소켓 리이슈 완료">
-      <change beforePath="$PROJECT_DIR$/.idea/libraries/Dart_SDK.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/libraries/Dart_SDK.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/android/app/src/main/AndroidManifest.xml" beforeDir="false" afterPath="$PROJECT_DIR$/project/android/app/src/main/AndroidManifest.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/lib/user/login_page.dart" beforeDir="false" afterPath="$PROJECT_DIR$/project/lib/user/login_page.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/lib/l10n/app_en.arb" beforeDir="false" afterPath="$PROJECT_DIR$/project/lib/l10n/app_en.arb" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/lib/l10n/app_ko.arb" beforeDir="false" afterPath="$PROJECT_DIR$/project/lib/l10n/app_ko.arb" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/lib/l10n/app_localizations.dart" beforeDir="false" afterPath="$PROJECT_DIR$/project/lib/l10n/app_localizations.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/lib/l10n/app_localizations_en.dart" beforeDir="false" afterPath="$PROJECT_DIR$/project/lib/l10n/app_localizations_en.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/lib/l10n/app_localizations_ko.dart" beforeDir="false" afterPath="$PROJECT_DIR$/project/lib/l10n/app_localizations_ko.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/lib/navigation_drawer.dart" beforeDir="false" afterPath="$PROJECT_DIR$/project/lib/navigation_drawer.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/lib/user/join_page.dart" beforeDir="false" afterPath="$PROJECT_DIR$/project/lib/user/join_page.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/project/lib/user/login_page.dart" beforeDir="false" afterPath="$PROJECT_DIR$/project/lib/user/login_page.dart" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -34,6 +23,11 @@
     </option>
   </component>
   <component name="Git.Settings">
+    <option name="RECENT_BRANCH_BY_REPOSITORY">
+      <map>
+        <entry key="$PROJECT_DIR$" value="provider-start" />
+      </map>
+    </option>
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
   <component name="GitHubPullRequestSearchHistory">{
@@ -71,7 +65,7 @@
     "cidr.known.project.marker": "true",
     "com.google.services.firebase.aqiPopupShown": "true",
     "dart.analysis.tool.window.visible": "false",
-    "git-widget-placeholder": "dev__mingyu",
+    "git-widget-placeholder": "main",
     "io.flutter.reload.alreadyRun": "true",
     "kotlin-language-version-configured": "true",
     "last_opened_file_path": "C:/Users/803-02/Desktop/flutter/bin/cache/dart-sdk",
@@ -144,6 +138,17 @@
     </task>
     <option name="localTasksCounter" value="4" />
     <servers />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="리이슈전 확인" />
