@@ -55,6 +55,7 @@ class ChatMessage {
   final String? nickname;     // 보낸 사람 닉네임 (TALK, IMAGE 메시지에만 존재)
   final String message;        // 메시지 내용 또는 시스템 메시지
   final int? messageSeq;
+
   // final DateTime timestamp; // DTO에 타임스탬프가 없으므로 일단 제외. 필요 시 추가해야 함.
 
   ChatMessage({

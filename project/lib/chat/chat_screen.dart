@@ -1,3 +1,6 @@
+// ChatScreen.dart (생명주기 관리 최종 수정안)
+
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:project/widget/translator.dart';
 import 'package:provider/provider.dart';
@@ -5,7 +8,7 @@ import '../l10n/app_localizations.dart';
 import '../provider/auth_provider.dart';
 import 'chat_model.dart';
 import 'chat_api_service.dart';
-import 'chat_service.dart'; // 새로 만든 서비스 임포트
+import 'chat_service.dart';
 
 class ChatScreen extends StatefulWidget {
   final int roomId;
@@ -19,164 +22,179 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  // 상태 변수들
+  final String _screenId = DateTime.now().millisecondsSinceEpoch.toString();
   final List<ChatMessage> _messages = [];
-  bool _isLoadingHistory = true; // 과거 내역 로딩 상태
+  bool _isLoadingHistory = true;
   final TextEditingController _textController = TextEditingController();
-
-  // 나의 유저 ID (로그인 정보에서 가져와야 함)
   late String myUserId;
   int _lastReadSeq = 0;
 
-  // 핵심: ChatService 인스턴스
-  late final ChatService _chatService;
-
-  @override
-// _ChatScreenState 클래스 안
+  // ✨ 1. late final을 제거하고 nullable(?)로 선언하여 생명주기를 완벽하게 제어합니다.
+  ChatService? _chatService;
+  StreamSubscription<ChatMessage>? _messageSubscription;
 
   @override
   void initState() {
-    super.initState(); // 항상 initState의 맨 처음에 super.initState()를 호출해야 합니다.
+    super.initState();
+    print("🏁 [ChatScreen-$_screenId] initState - Room: ${widget.roomId}");
+    // 첫 프레임 렌더링 후 안전하게 초기화 메서드를 호출합니다.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeChat();
+    });
+  }
 
-    // --- 1. 기본 정보 설정 ---
+  // --- 채팅 초기화를 담당하는 단일 함수 ---
+  Future<void> _initializeChat() async {
+    // ✨ 2. _chatService가 null일 때, 즉 최초에만 단 한번 실행되도록 보장합니다.
+    if (_chatService != null) {
+      print("⚠️ [ChatScreen-$_screenId] 이미 초기화됨. 중복 실행 방지.");
+      return;
+    }
+
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     myUserId = authProvider.userProfile?.username ?? '';
-    final myNickname = authProvider.userProfile?.nickname ?? '알수없음';
     final token = authProvider.token;
 
-    // --- 2. 서비스 초기화 ---
-    // 토큰이 있을 경우에만 ChatService를 초기화하고 모든 로직을 실행합니다.
-    if (token != null) {
-      _chatService = ChatService(
-        roomId: widget.roomId,
-        jwtToken: token,
-        senderId: myUserId,
-        senderNickname: myNickname,
-      );
-      _chatService.connect();
-
-      // --- 3. 실시간 메시지 수신 준비 ---
-      // ✨ 바로 여기에 stream.listen 코드가 위치합니다.
-      _chatService.messageStream.listen((newMessage) {
-        if (mounted) {
-          setState(() {
-            _messages.insert(0, newMessage);
-          });
-          // ✨ 새 메시지를 받을 때마다 _lastReadSeq를 조용히 업데이트만 합니다.
-          if (newMessage.messageSeq != null &&
-              newMessage.messageSeq! > _lastReadSeq) {
-            _lastReadSeq = newMessage.messageSeq!;
-          }
-        }
-      });
-
-      // --- 4. 과거 데이터 로딩 ---
-      _fetchChatHistory();
-    } else {
-      // 토큰이 없을 경우 (비정상적인 접근)
-      print('오류: 토큰이 없어서 채팅 서비스에 연결할 수 없습니다.');
-      if (mounted) {
-        setState(() {
-          _isLoadingHistory = false;
-        });
-        // TODO: 사용자에게 "로그인이 필요합니다" 같은 메시지를 보여주고 이전 화면으로 돌려보내는 로직 추가
-      }
+    if (token == null) {
+      if (mounted) setState(() => _isLoadingHistory = false);
+      return;
     }
+
+    // --- ChatService 인스턴스 생성 (단 한번만) ---
+    _chatService = ChatService(
+      roomId: widget.roomId,
+      jwtToken: token,
+      senderId: myUserId,
+      senderNickname: authProvider.userProfile?.nickname ?? '알수없음',
+    );
+
+    // --- 스트림 구독, 웹소켓 연결, 과거 기록 로딩을 순서대로 실행 ---
+    _messageSubscription = _chatService!.messageStream.listen(_onNewMessage);
+    _chatService!.connect();
+    await _fetchChatHistory();
   }
 
+  // --- 실시간 메시지 수신 처리 ---
+  void _onNewMessage(ChatMessage newMessage) {
+    if (!mounted) return;
+    setState(() {
+      final isDuplicate = _messages.any((msg) =>
+      msg.messageSeq != null &&
+          newMessage.messageSeq != null &&
+          msg.messageSeq == newMessage.messageSeq);
+
+      if (!isDuplicate) {
+        _messages.insert(0, newMessage);
+        if (newMessage.messageSeq != null && newMessage.messageSeq! > _lastReadSeq) {
+          _lastReadSeq = newMessage.messageSeq!;
+        }
+      }
+    });
+  }
+
+  // --- 과거 메시지 로딩 ---
   Future<void> _fetchChatHistory() async {
     try {
-      // 1. 서버로부터 과거 메시지를 받습니다. (순서: [과거, ..., 최신])
       final history = await ChatApiService.getChatHistory(widget.roomId);
-
-      if (mounted) {
-        // 2. 읽음 처리: history가 비어있지 않다면, 가장 마지막 요소(가장 최신)의 seq를 사용합니다.
-        if (history.isNotEmpty) {
-          _lastReadSeq = history.last.messageSeq ?? 0;
-        }
-
-        // 3. UI 업데이트: 화면 표시를 위해 리스트를 뒤집어서 _messages에 추가합니다.
-        setState(() {
-          _messages.addAll(history.reversed); // (순서: [최신, ..., 과거])
-          _isLoadingHistory = false;
-        });
+      if (!mounted) return;
+      if (history.isNotEmpty) {
+        _lastReadSeq = history.last.messageSeq ?? 0;
       }
-    } catch (e) {
       setState(() {
+        _messages.addAll(history.reversed);
         _isLoadingHistory = false;
       });
-      print('과거 메시지 로딩 실패: $e');
+    } catch (e) {
+      if (mounted) setState(() => _isLoadingHistory = false);
     }
   }
 
-  // ✨ 이 함수는 이제 dispose에서만 사용됩니다.
-  void _updateReadStatus() {
-    if (_lastReadSeq > 0) {
-      print(">>>>> 퇴장 시 읽음 처리: Room ${widget.roomId}, Seq $_lastReadSeq");
-      ChatApiService.updateLastReadSequence(
-          widget.roomId, myUserId, _lastReadSeq);
-    }
-  }
-
+  // --- 메시지 전송 ---
   void _handleSendPressed() {
-    final text = _textController.text;
+    final text = _textController.text.trim();
     if (text.isNotEmpty) {
-      _chatService.sendMessage(text);
+      _chatService?.sendMessage(text);
       _textController.clear();
     }
   }
 
+  // --- 3. 화면 해제 시 모든 자원을 깨끗하게 정리합니다. ---
   @override
   void dispose() {
-    _updateReadStatus();
-    _chatService.dispose(); // ChatService 정리
+    print("💀 [ChatScreen-$_screenId] dispose 시작");
+    if (_lastReadSeq > 0) {
+      ChatApiService.updateLastReadSequence(widget.roomId, myUserId, _lastReadSeq);
+    }
+    _messageSubscription?.cancel();
+    _chatService?.dispose();
     _textController.dispose();
     super.dispose();
+    print("✅ [ChatScreen-$_screenId] dispose 완료");
   }
+
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+
+    // 🔍 빌드 상태 확인
+    if (_messages.length > 0) {
+      print("🎨 [ChatScreen-$_screenId] build 호출 - 메시지 ${_messages.length}개 렌더링");
+    }
+
     return Scaffold(
       appBar: AppBar(
-        title: TranslatedText(text: widget.roomName),
+        title: TranslatedText(text: "${widget.roomName} (Debug-$_screenId)"),
         centerTitle: true,
       ),
       body: Column(
         children: [
+          // 🔍 디버그 정보 표시
+          Container(
+            padding: const EdgeInsets.all(8),
+            color: Colors.yellow[100],
+            child: Text(
+              "🔍 Debug: 메시지 ${_messages.length}개, LastReadSeq: $_lastReadSeq",
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
           Expanded(
             child: _isLoadingHistory
                 ? const Center(child: CircularProgressIndicator())
+                : _messages.isEmpty
+                ? Center(child: Text(l10n.chatMessage))
                 : ListView.builder(
-                    reverse: true,
-                    padding: const EdgeInsets.symmetric(vertical: 8.0),
-                    itemCount: _messages.length,
-                    itemBuilder: (context, index) {
-                      final message = _messages[index];
-                      // DTO에 sender ID가 있다고 가정하고, 나의 ID와 비교
-                      final isMe = message.sender == myUserId;
-                      // 타입에 따라 다른 위젯을 보여주는 로직 (이전 답변과 동일)
-                      switch (message.type) {
-                        case MessageType.TALK:
-                        case MessageType.IMAGE:
-                          return _buildTalkBubble(message, isMe: isMe);
-                        case MessageType.ENTER:
-                        case MessageType.LEAVE:
-                          return _buildSystemMessage(message);
-                        default:
-                          return const SizedBox.shrink();
-                      }
-                    },
-                  ),
+              reverse: true,
+              padding: const EdgeInsets.symmetric(vertical: 8.0),
+              itemCount: _messages.length,
+              itemBuilder: (context, index) {
+                final message = _messages[index];
+                final isMe = message.sender == myUserId;
+
+                // 🔍 각 메시지 렌더링 확인
+                if (index < 3) { // 최근 3개만 로그
+                  print("🎨 [ChatScreen-$_screenId] 렌더링 [$index]: Seq:${message.messageSeq}, IsMe:$isMe, Msg:${message.message}");
+                }
+
+                switch (message.type) {
+                  case MessageType.TALK:
+                  case MessageType.IMAGE:
+                    return _buildTalkBubble(message, isMe: isMe);
+                  case MessageType.ENTER:
+                  case MessageType.LEAVE:
+                    return _buildSystemMessage(message);
+                  default:
+                    return const SizedBox.shrink();
+                }
+              },
+            ),
           ),
-          // 메시지 입력창 UI
           _buildMessageComposer(l10n),
         ],
       ),
     );
   }
 
-  // 메시지 입력 위젯
   Widget _buildMessageComposer(AppLocalizations l10n) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8.0),
@@ -189,6 +207,7 @@ class _ChatScreenState extends State<ChatScreen> {
               decoration: InputDecoration.collapsed(
                 hintText: l10n.chatHintText,
               ),
+              onSubmitted: (_) => _handleSendPressed(),
             ),
           ),
           IconButton(
@@ -200,7 +219,6 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  // 아래는 UI를 그리는 위젯들 (이전 답변과 동일, 필요 시 isMe 로직만 추가)
   Widget _buildSystemMessage(ChatMessage message) {
     return Center(
       child: Container(
@@ -216,7 +234,6 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  // 일반 대화 메시지를 위한 말풍선 위젯
   Widget _buildTalkBubble(ChatMessage message, {required bool isMe}) {
     return Padding(
       padding: EdgeInsets.only(
@@ -227,7 +244,7 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       child: Column(
         crossAxisAlignment:
-            isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
           if (!isMe)
             TranslatedText(
@@ -241,9 +258,20 @@ class _ChatScreenState extends State<ChatScreen> {
               color: isMe ? Colors.blue[100] : Colors.grey[200],
               borderRadius: BorderRadius.circular(16),
             ),
-            child: message.type == MessageType.IMAGE
-                ? Image.network(message.message)
-                : TranslatedText(text: message.message),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 🔍 디버그 정보 표시
+                Text(
+                  "Seq:${message.messageSeq} ${isMe ? '(Me)' : '(Other)'}",
+                  style: const TextStyle(fontSize: 8, color: Colors.red),
+                ),
+                const SizedBox(height: 2),
+                message.type == MessageType.IMAGE
+                    ? Image.network(message.message)
+                    : TranslatedText(text: message.message),
+              ],
+            ),
           ),
         ],
       ),

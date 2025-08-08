@@ -1,5 +1,3 @@
-// lobby_service.dart (stomp_dart_client로 전체 리팩토링)
-
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -9,20 +7,40 @@ import 'package:stomp_dart_client/stomp_frame.dart';
 
 class LobbyService {
   final Function onLobbyUpdate;
-  final String jwtToken; // ✨ 토큰을 생성자에서 받도록 변경
+  final String jwtToken;
 
   StompClient? _stompClient;
   void Function()? _unsubscribeCallback;
 
-  LobbyService({required this.onLobbyUpdate, required this.jwtToken}); // ✨ 토큰 추가
+  // ✨ 연결 상태 추적 변수 추가
+  bool _isConnecting = false;
+  bool _isConnected = false;
+  bool _isDisposed = false;
 
-  void connectAndSubscribe() { // ✨ 파라미터에서 토큰 제거
-    final wsUrl = dotenv.env['PROD_WS_FLUTTER_URL'];
-    if (wsUrl == null) {
-      print("LobbyService: .env 파일에서 DEV_WS_FLUTTER_URL을 찾을 수 없습니다.");
+  LobbyService({required this.onLobbyUpdate, required this.jwtToken});
+
+  void connectAndSubscribe() {
+    // ✨ 중복 연결 방지
+    if (_isConnecting || _isConnected || _isDisposed) {
+      print("⚠️ [LobbyService] 이미 연결 중이거나 연결됨 또는 해제됨. 연결 요청 무시.");
       return;
     }
+
+    _isConnecting = true;
+
+    final wsUrl = dotenv.env['PROD_WS_FLUTTER_URL'];
+    if (wsUrl == null) {
+      print("❌ [LobbyService] PROD_WS_FLUTTER_URL을 .env 파일에서 찾을 수 없습니다.");
+      _isConnecting = false;
+      return;
+    }
+
     final pureToken = jwtToken.startsWith('Bearer ') ? jwtToken.substring(7) : jwtToken;
+
+    // ✨ 기존 연결이 있다면 먼저 정리
+    if (_stompClient != null) {
+      _cleanup();
+    }
 
     _stompClient = StompClient(
       config: StompConfig(
@@ -30,8 +48,21 @@ class LobbyService {
         onConnect: _onConnectCallback,
         stompConnectHeaders: {'Authorization': 'Bearer $pureToken'},
         webSocketConnectHeaders: {'Authorization': 'Bearer $pureToken'},
-        onWebSocketError: (dynamic error) => print("[Lobby] 웹소켓 오류: $error"),
-        onStompError: (StompFrame frame) => print("[Lobby] STOMP 오류: ${frame.body}"),
+        onWebSocketError: (dynamic error) {
+          print("❌ [LobbyService] 웹소켓 오류: $error");
+          _isConnecting = false;
+          _isConnected = false;
+        },
+        onStompError: (StompFrame frame) {
+          print("❌ [LobbyService] STOMP 오류: ${frame.body}");
+          _isConnecting = false;
+          _isConnected = false;
+        },
+        onDisconnect: (StompFrame frame) {
+          print("⚠️ [LobbyService] 웹소켓 연결 끊어짐.");
+          _isConnected = false;
+          _isConnecting = false;
+        },
       ),
     );
 
@@ -40,11 +71,28 @@ class LobbyService {
   }
 
   void _onConnectCallback(StompFrame frame) {
+    if (_isDisposed) {
+      print("⚠️ [LobbyService] 이미 해제된 서비스. 연결 콜백 무시.");
+      return;
+    }
+
+    _isConnecting = false;
+    _isConnected = true;
+
     print("🎉 [LobbyService] STOMP 연결 성공! 로비 구독을 시작합니다.");
+
+    // ✨ 기존 구독이 있다면 해제
+    _unsubscribeCallback?.call();
+
     _unsubscribeCallback = _stompClient?.subscribe(
       destination: '/sub/chat/lobby',
       callback: (frame) {
-        print("[LobbyService] 메시지 수신!");
+        if (_isDisposed) {
+          print("⚠️ [LobbyService] 이미 해제된 서비스. 메시지 수신 무시.");
+          return;
+        }
+
+        print("📨 [LobbyService] 메시지 수신!");
         try {
           final data = json.decode(frame.body!);
           if (data['type'] == 'LOBBY_ROOM_UPDATE') {
@@ -52,15 +100,35 @@ class LobbyService {
             onLobbyUpdate();
           }
         } catch(e) {
-          print("[LobbyService] 메시지 파싱 에러: $e");
+          print("❌ [LobbyService] 메시지 파싱 에러: $e");
         }
       },
     );
   }
 
-  void dispose() {
+  // ✨ 내부 정리 메서드
+  void _cleanup() {
     _unsubscribeCallback?.call();
+    _unsubscribeCallback = null;
+
     _stompClient?.deactivate();
-    print("[LobbyService] 서비스 정리 완료.");
+    _stompClient = null;
+
+    _isConnected = false;
+    _isConnecting = false;
+  }
+
+  void dispose() {
+    if (_isDisposed) {
+      print("⚠️ [LobbyService] 이미 해제된 서비스.");
+      return;
+    }
+
+    print("🔄 [LobbyService] 서비스 정리 시작...");
+    _isDisposed = true;
+
+    _cleanup();
+
+    print("✅ [LobbyService] 서비스 정리 완료.");
   }
 }
